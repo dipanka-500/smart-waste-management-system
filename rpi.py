@@ -19,7 +19,7 @@ BYTES_PER_PIXEL = 2  # RGB565 format
 BYTES_PER_FRAME = WIDTH * HEIGHT * BYTES_PER_PIXEL
 
 # Model settings
-MODEL_PATH = "model.tflite"  # Path to your TFLite model
+MODEL_PATH = "model.h"  # path to model
 INPUT_SIZE = (224, 224)  # Model input size, adjust as needed
 NUM_CLASSES = 10  # Number of classes in your model
 
