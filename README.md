@@ -29,9 +29,10 @@ Raspberry Pi (for running the ML model)
 
 Servo Motor / Stepper Motor (for waste sorting)
 
-Jumper Wires & Breadboard (for connections).
+Jumper Wires & Breadboard (for connections)
+
 📂 Repository Structure
-Copy
+
 Smart-Waste-Sorter/  
 ├── Arduino/  
 │   ├── waste_sorter_ble.ino       # Arduino BLE & Camera Code  
@@ -44,6 +45,7 @@ Smart-Waste-Sorter/
 │   ├── wiring_diagram.png         # Hardware Connections  
 │   └── demo_video.mp4             # System Demo  
 └── README.md                      # This File  
+
 ⚙️ How It Works
 1️⃣ Arduino Nano 33 BLE Sense (Sender)
 Touch Sensor Detection:
@@ -101,14 +103,13 @@ Upload waste_sorter_ble.ino to the Arduino Nano 33 BLE Sense.
 Ensure ov7670_config.h is properly configured.
 
 2. Raspberry Pi Setup
-bash
-Copy
 # Install dependencies  
 pip install tensorflow numpy blupy RPi.GPIO  
 
 # Run the receiver & classifier  
 python3 bluetooth_receiver.py  
 python3 classify_waste.py  
+
 3. Test the System
 Place an object near the touch sensor.
 
@@ -119,11 +120,11 @@ RPi classifies it and prints the result.
 Motor moves to sort the waste.
 
 📊 Expected Output
-plaintext
-Copy
+
 [Bluetooth] Image received from Arduino.  
 [Model] Loading model.h5...  
 [Prediction] Detected: metal (92% confidence)  
 [GPIO] Activating motor for metal sorting...  
+
 📜 License
 MIT License - Free for personal & educational use.
