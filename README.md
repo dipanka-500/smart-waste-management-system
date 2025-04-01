@@ -29,8 +29,7 @@ Raspberry Pi (for running the ML model)
 
 Servo Motor / Stepper Motor (for waste sorting)
 
-Jumper Wires & Breadboard (for connections)
-
+Jumper Wires & Breadboard (for connections).
 📂 Repository Structure
 Copy
 Smart-Waste-Sorter/  
