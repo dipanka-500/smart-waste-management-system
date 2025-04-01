@@ -1,4 +1,6 @@
 Project: Smart Waste Sorting System
+
+
 📌 Overview
 This project implements a smart waste classification system using an Arduino Nano 33 BLE Sense with an OV7670 camera, a Raspberry Pi (RPi) for inference, and Bluetooth communication between them.
 
