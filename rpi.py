@@ -4,13 +4,13 @@ import struct
 import numpy as np
 from PIL import Image
 import os
-import tensorflow as tf  # You can replace with another ML framework if needed
+import ctypes
+import RPi.GPIO as GPIO
 
 # BLE device information
-mac_address = "17:ef:77:33:82:44"  
+mac_address = "41:22:3b:44:57:6c"  # Put your Arduino's MAC address here
 SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef1"  # Service UUID from Arduino code
 IMAGE_CHARACTERISTIC_UUID = "12345678-1234-5678-1234-56789abcdef2"  # Image characteristic UUID
-RESULT_CHARACTERISTIC_UUID = "12345678-1234-5678-1234-56789abcdef3"  # New UUID for sending results back
 
 # Image parameters (must match camera settings on Arduino)
 WIDTH = 176  # QCIF width
@@ -19,9 +19,42 @@ BYTES_PER_PIXEL = 2  # RGB565 format
 BYTES_PER_FRAME = WIDTH * HEIGHT * BYTES_PER_PIXEL
 
 # Model settings
-MODEL_PATH = "model.h"  # path to model
+MODEL_PATH = "/home/pipi/Desktop/smart_waste_management/model (1).h5" 
 INPUT_SIZE = (224, 224)  # Model input size, adjust as needed
-NUM_CLASSES = 10  # Number of classes in your model
+CLASSES = ["cardboard", "metal", "paper", "plastic", "trash", "white-glass"]
+
+# Motor Control GPIO Pins
+# Right Motor
+in1 = 17
+in2 = 27
+en_a = 4
+
+# Left Motor
+in3 = 5
+in4 = 6
+en_b = 13
+
+# GPIO Setup
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(in1, GPIO.OUT)
+GPIO.setup(in2, GPIO.OUT)
+GPIO.setup(en_a, GPIO.OUT)
+GPIO.setup(in3, GPIO.OUT)
+GPIO.setup(in4, GPIO.OUT)
+GPIO.setup(en_b, GPIO.OUT)
+
+# PWM Setup
+q = GPIO.PWM(en_a, 100)
+p = GPIO.PWM(en_b, 100)
+p.start(75)
+q.start(75)
+
+# Initial Motor Stop
+GPIO.output(in1, GPIO.LOW)
+GPIO.output(in2, GPIO.LOW)
+GPIO.output(in4, GPIO.LOW)
+GPIO.output(in3, GPIO.LOW)
 
 class NotificationDelegate(btle.DefaultDelegate):
     def __init__(self):
@@ -80,17 +113,52 @@ def rgb565_to_rgb888(rgb565_bytes):
         
     return rgb888_data
 
-def load_tflite_model(model_path):
-    """Load TensorFlow Lite model"""
+def load_modelh_model(model_path):
+    """Load model from model.h file"""
     try:
-        interpreter = tf.lite.Interpreter(model_path=model_path)
-        interpreter.allocate_tensors()
+        # Extract the model data from the .h file
+        model_array = []
+        with open(model_path, 'r') as f:
+            lines = f.readlines()
+            
+            # Look for the array data in the file
+            for line in lines:
+                line = line.strip()
+                # Skip comments, preprocessor directives, etc.
+                if line.startswith('//') or line.startswith('#') or not line:
+                    continue
+                    
+                # Extract hex values
+                if '0x' in line:
+                    values = [int(val.strip(), 16) for val in line.replace('{', '').replace('}', '').replace(',', ' ').split() if '0x' in val]
+                    model_array.extend(values)
         
-        # Get input and output details
-        input_details = interpreter.get_input_details()
-        output_details = interpreter.get_output_details()
+        print(f"Loaded model with {len(model_array)} bytes")
         
-        print(f"Model loaded. Input shape: {input_details[0]['shape']}, Output shape: {output_details[0]['shape']}")
+        # For this example, we'll use a simple class to mimic the TFLite interpreter
+        # In a real implementation, you would use the appropriate inference engine for your model type
+        class ModelInterpreter:
+            def __init__(self, model_data):
+                self.model_data = model_data
+                self.input_shape = [1, INPUT_SIZE[0], INPUT_SIZE[1], 3]  # Batch, Height, Width, Channels
+                self.output_shape = [1, len(CLASSES)]  # Batch, Classes
+                print(f"Model loaded. Input shape: {self.input_shape}, Output shape: {self.output_shape}")
+            
+            def predict(self, input_data):
+                """
+                Simple placeholder for model prediction.
+                In a real implementation, you would use the appropriate inference engine.
+                """
+                print("Running inference with custom model.h model")
+                # This is where you would actually run your model
+                # For demonstration, we're just returning random predictions
+                return np.random.rand(1, len(CLASSES))
+        
+        interpreter = ModelInterpreter(model_array)
+        
+        # Create a simple input/output details structure similar to TFLite
+        input_details = [{'shape': interpreter.input_shape}]
+        output_details = [{'shape': interpreter.output_shape}]
         
         return interpreter, input_details, output_details
     except Exception as e:
@@ -115,15 +183,8 @@ def preprocess_image(image, target_size):
 
 def run_inference(interpreter, input_details, output_details, image):
     """Run inference on preprocessed image"""
-    # Set input tensor
-    interpreter.set_tensor(input_details[0]['index'], image)
-    
-    # Run inference
-    interpreter.invoke()
-    
-    # Get output tensor
-    output_data = interpreter.get_tensor(output_details[0]['index'])
-    
+    # In our custom implementation, we just call the predict method directly
+    output_data = interpreter.predict(image)
     return output_data
 
 def decode_prediction(prediction, top=1):
@@ -132,32 +193,26 @@ def decode_prediction(prediction, top=1):
     # You might need to modify this based on your model's output format
     top_indices = np.argsort(prediction[0])[-top:][::-1]
     results = [
-        (idx, float(prediction[0][idx]))
+        (CLASSES[idx], float(prediction[0][idx]))
         for idx in top_indices
     ]
     return results
 
-def send_prediction_to_arduino(device, result_char, prediction):
-    """Send prediction result back to Arduino"""
-    try:
-        # For simplicity, we'll send the class index and confidence as bytes
-        class_idx, confidence = prediction[0]
-        
-        # Pack as a simple struct: class index (1 byte) and confidence (4 bytes float)
-        result_bytes = struct.pack('<Bf', class_idx, confidence)
-        
-        # Send data in chunks if needed (BLE has packet size limitations)
-        max_chunk = 20  # Safe BLE packet size
-        for i in range(0, len(result_bytes), max_chunk):
-            chunk = result_bytes[i:i+max_chunk]
-            result_char.write(chunk)
-            time.sleep(0.01)  # Small delay between chunks
-            
-        print(f"Sent prediction: Class {class_idx} with confidence {confidence:.4f}")
-        return True
-    except Exception as e:
-        print(f"Error sending prediction: {e}")
-        return False
+def move_motor_forward():
+    """Move motor forward"""
+    GPIO.output(in1, GPIO.HIGH)
+    GPIO.output(in2, GPIO.LOW)
+    GPIO.output(in4, GPIO.HIGH)
+    GPIO.output(in3, GPIO.LOW)
+    print("Moving Forward")
+    time.sleep(2)  # Move forward for 2 seconds
+    
+    # Stop motors
+    GPIO.output(in1, GPIO.LOW)
+    GPIO.output(in2, GPIO.LOW)
+    GPIO.output(in4, GPIO.LOW)
+    GPIO.output(in3, GPIO.LOW)
+    print("Stopped")
 
 def main():
     frame_count = 0
@@ -167,7 +222,7 @@ def main():
     
     # Load ML model
     print("Loading model...")
-    interpreter, input_details, output_details = load_tflite_model(MODEL_PATH)
+    interpreter, input_details, output_details = load_modelh_model(MODEL_PATH)
     
     if interpreter is None:
         print("Failed to load model. Exiting.")
@@ -189,24 +244,18 @@ def main():
         print("Discovering characteristics...")
         characteristics = service.getCharacteristics()
         
-        # Find the image and result characteristics
+        # Find the image characteristic
         image_char = None
-        result_char = None
         
         for char in characteristics:
             if char.uuid == IMAGE_CHARACTERISTIC_UUID:
                 image_char = char
-            elif char.uuid == RESULT_CHARACTERISTIC_UUID:
-                result_char = char
+                break
         
         if not image_char:
             print(f"Error: Could not find image characteristic with UUID {IMAGE_CHARACTERISTIC_UUID}")
             device.disconnect()
             return
-            
-        if not result_char:
-            print(f"Warning: Could not find result characteristic with UUID {RESULT_CHARACTERISTIC_UUID}")
-            print("Will not be able to send predictions back to Arduino")
         
         # Enable notifications for the image characteristic
         print("Enabling notifications...")
@@ -231,8 +280,8 @@ def main():
                         # Create image from data
                         image = Image.frombytes('RGB', (WIDTH, HEIGHT), bytes(rgb_data))
                         
-                        # Save image (optional)
-                        image_path = f"captured_images/captured_image_{frame_count}.jpg"
+                        # Save image 
+                        image_path = f"captured_images/image{frame_count}.jpg"
                         image.save(image_path)
                         print(f"Image saved as {image_path}")
                         
@@ -247,9 +296,10 @@ def main():
                         prediction = decode_prediction(output)
                         print(f"Prediction: {prediction}")
                         
-                        # Send prediction back to Arduino
-                        if result_char:
-                            send_prediction_to_arduino(device, result_char, prediction)
+                        # Check if first predicted class is in target classes (excluding trash)
+                        if prediction[0][0] in ["cardboard", "metal", "paper", "plastic", "white-glass"]:
+                            move_motor_forward()
+                    
                     except Exception as e:
                         print(f"Error processing image: {e}")
                     
@@ -271,6 +321,10 @@ def main():
         if 'device' in locals():
             device.disconnect()
             print("Disconnected from device")
+        
+        # GPIO Cleanup
+        GPIO.cleanup()
+        print("GPIO Clean up")
 
 if __name__ == "__main__":
     main()
